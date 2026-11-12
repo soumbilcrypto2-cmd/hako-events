@@ -13,7 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-
     steps:
       - name: Recuperer le projet
         uses: actions/checkout@v4
@@ -32,17 +31,46 @@ jobs:
       - name: Installer Cordova
         run: npm install -g cordova@13.0.0
 
-      - name: Creer le projet Android
+      - name: Installer Supabase localement
+        run: |
+          npm install --no-save @supabase/supabase-js esbuild
+          cat > supabase-entry.js <<'EOF'
+          import { createClient } from '@supabase/supabase-js';
+          window.supabase = { createClient };
+          EOF
+
+      - name: Creer le projet Cordova
         run: |
           cordova create hako-build com.soumbil.hakoevents "HAKO EVENTS"
           cp HAKO-EVENTS-Banniere-Promotionnelle-Hako.html hako-build/www/index.html
+          npx esbuild supabase-entry.js --bundle --format=iife --platform=browser --outfile=hako-build/www/supabase-local.js
+
+      - name: Integrer Supabase localement et extraire le logo
+        run: |
+          python3 - <<'PY'
+          import re, base64, pathlib
+          html = pathlib.Path('hako-build/www/index.html')
+          content = html.read_text(encoding='utf-8')
+          pattern = r'<script\s+src=["\']https://cdn\.jsdelivr\.net/npm/@supabase/supabase-js@2["\']\s*>\s*</script>'
+          content, count = re.subn(pattern, '<script src="supabase-local.js"></script>', content, count=1)
+          if count != 1:
+              raise SystemExit('Balise CDN Supabase introuvable : arret pour eviter un APK incorrect.')
+          html.write_text(content, encoding='utf-8')
+          match = re.search(r"const LOGO='data:image/png;base64,([^']+)'", content)
+          if not match:
+              raise SystemExit('Logo PNG integre introuvable dans le HTML.')
+          icon = pathlib.Path('hako-build/res/icon.png')
+          icon.parent.mkdir(parents=True, exist_ok=True)
+          icon.write_bytes(base64.b64decode(match.group(1)))
+          print('Supabase integre localement et logo extrait.')
+          PY
 
       - name: Configurer HAKO EVENTS
         run: |
           cat > hako-build/config.xml <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <widget id="com.soumbil.hakoevents"
-            version="1.0.0"
+            version="1.0.1"
             xmlns="http://www.w3.org/ns/widgets"
             xmlns:cdv="http://cordova.apache.org/ns/1.0">
             <name>HAKO EVENTS</name>
@@ -50,8 +78,12 @@ jobs:
             <content src="index.html" />
             <access origin="*" />
             <allow-navigation href="*" />
-            <allow-intent href="*" />
+            <allow-intent href="http://*/*" />
+            <allow-intent href="https://*/*" />
             <preference name="AndroidXEnabled" value="true" />
+            <platform name="android">
+              <icon src="res/icon.png" />
+            </platform>
           </widget>
           EOF
 
@@ -66,7 +98,7 @@ jobs:
       - name: Recuperer le APK
         uses: actions/upload-artifact@v4
         with:
-          name: HAKO-EVENTS-APK
+          name: HAKO-EVENTS-APK-CORRIGE
           path: hako-build/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
