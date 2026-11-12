@@ -1,0 +1,72 @@
+
+name: Build HAKO EVENTS APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Recuperer le projet
+        uses: actions/checkout@v4
+
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Installer Cordova
+        run: npm install -g cordova@13.0.0
+
+      - name: Creer le projet Android
+        run: |
+          cordova create hako-build com.soumbil.hakoevents "HAKO EVENTS"
+          cp HAKO-EVENTS-Banniere-Promotionnelle-Hako.html hako-build/www/index.html
+
+      - name: Configurer HAKO EVENTS
+        run: |
+          cat > hako-build/config.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <widget id="com.soumbil.hakoevents"
+            version="1.0.0"
+            xmlns="http://www.w3.org/ns/widgets"
+            xmlns:cdv="http://cordova.apache.org/ns/1.0">
+            <name>HAKO EVENTS</name>
+            <description>Evenements et billetterie au Burkina Faso</description>
+            <content src="index.html" />
+            <access origin="*" />
+            <allow-navigation href="*" />
+            <allow-intent href="*" />
+            <preference name="AndroidXEnabled" value="true" />
+          </widget>
+          EOF
+
+      - name: Ajouter Android
+        working-directory: hako-build
+        run: cordova platform add android@15.1.0
+
+      - name: Construire le APK
+        working-directory: hako-build
+        run: cordova build android --debug
+
+      - name: Recuperer le APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HAKO-EVENTS-APK
+          path: hako-build/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          
